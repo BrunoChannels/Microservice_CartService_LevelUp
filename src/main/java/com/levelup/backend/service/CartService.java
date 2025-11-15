@@ -2,7 +2,6 @@ package com.levelup.backend.service;
 
 import com.levelup.backend.model.Cart;
 import com.levelup.backend.model.CartItem;
-import com.levelup.backend.repo.CartItemRepository;
 import com.levelup.backend.repo.CartRepository;
 import com.levelup.backend.web.dto.CartDtos.AddItemRequest;
 import com.levelup.backend.web.dto.CartDtos.ReplaceCartRequest;
@@ -13,67 +12,87 @@ import java.math.BigDecimal;
 
 @Service
 public class CartService {
-  private final CartRepository cartRepo;
-  private final CartItemRepository itemRepo;
-  public CartService(CartRepository cartRepo, CartItemRepository itemRepo) {
-    this.cartRepo = cartRepo; this.itemRepo = itemRepo;
-  }
 
-  @Transactional
-  public Cart getOrCreate(Long userId) {
-    return cartRepo.findByUserId(userId).orElseGet(() -> {
-      Cart c = new Cart(); c.setUserId(userId); return cartRepo.save(c);
-    });
-  }
+    private final CartRepository cartRepo;
 
-  @Transactional
-  public Cart addItem(Long userId, AddItemRequest req) {
-    if (req.qty == null || req.qty <= 0) req.qty = 1;
-    if (req.price == null) req.price = BigDecimal.ZERO;
-    Cart cart = getOrCreate(userId);
-    CartItem existing = cart.getItems().stream()
-      .filter(i -> i.getProductId().equals(req.productId)).findFirst().orElse(null);
-    if (existing != null) { existing.setQty(existing.getQty() + req.qty); }
-    else {
-      CartItem it = new CartItem();
-      it.setCart(cart); it.setProductId(req.productId); it.setName(req.name);
-      it.setPrice(req.price); it.setQty(req.qty); it.setImageUrl(req.imageUrl);
-      cart.getItems().add(it);
+    public CartService(CartRepository cartRepo) {
+        this.cartRepo = cartRepo;
     }
-    return cartRepo.save(cart);
-  }
 
-  @Transactional
-  public Cart updateQty(Long userId, Long itemId, int qty) {
-    Cart cart = getOrCreate(userId);
-    CartItem it = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
-      .findFirst().orElseThrow();
-    if (qty <= 0) { cart.getItems().remove(it); itemRepo.delete(it); }
-    else { it.setQty(qty); }
-    return cartRepo.save(cart);
-  }
+    @Transactional
+    public Cart getOrCreate(Long userId) {
+        return cartRepo.findByUserId(userId)
+                .orElseGet(() -> {
+                    Cart c = new Cart();
+                    c.setUserId(userId);
+                    return cartRepo.save(c);
+                });
+    }
 
-  @Transactional
-  public Cart removeItem(Long userId, Long itemId) {
-    Cart cart = getOrCreate(userId);
-    CartItem it = cart.getItems().stream().filter(i -> i.getId().equals(itemId))
-      .findFirst().orElseThrow();
-    cart.getItems().remove(it); itemRepo.delete(it);
-    return cartRepo.save(cart);
-  }
+    @Transactional
+    public Cart addItem(Long userId, AddItemRequest req) {
+        Cart cart = getOrCreate(userId);
 
-  @Transactional
-  public Cart clear(Long userId) {
-    Cart cart = getOrCreate(userId);
-    cart.getItems().clear();
-    return cartRepo.save(cart);
-  }
+        // Busca si ya existe el item del mismo producto
+        CartItem existing = cart.getItems().stream()
+                .filter(i -> i.getProductId().equals(req.productId))
+                .findFirst()
+                .orElse(null);
 
-  @Transactional
-  public Cart replaceCart(Long userId, ReplaceCartRequest req) {
-    Cart cart = getOrCreate(userId);
-    cart.getItems().clear();
-    if (req.items != null) { req.items.forEach(i -> addItem(userId, i)); }
-    return cartRepo.findByUserId(userId).orElseThrow();
-  }
+        if (existing != null) {
+            existing.setQty(existing.getQty() + (req.qty != null ? req.qty : 1));
+        } else {
+            CartItem item = new CartItem();
+            item.setCart(cart);
+            item.setProductId(req.productId);
+            item.setName(req.name);
+            item.setPrice(req.price != null ? req.price : BigDecimal.ZERO);
+            item.setQty(req.qty != null ? req.qty : 1);
+            item.setImageUrl(req.imageUrl);
+            cart.getItems().add(item);
+        }
+
+        return cartRepo.save(cart);
+    }
+
+    @Transactional
+    public Cart updateQty(Long userId, Long itemId, Integer qty) {
+        Cart cart = getOrCreate(userId);
+
+        final CartItem item = cart.getItems().stream()
+                .filter(i -> i.getId().equals(itemId))
+                .findFirst()
+                .orElseThrow(null);
+
+        item.setQty(qty);
+        return cartRepo.save(cart);
+    }
+
+    @Transactional
+    public Cart removeItem(Long userId, Long itemId) {
+        Cart cart = getOrCreate(userId);
+        cart.getItems().removeIf(i -> i.getId().equals(itemId));
+        return cartRepo.save(cart);
+    }
+
+    @Transactional
+    public Cart clear(Long userId) {
+        Cart cart = getOrCreate(userId);
+        cart.getItems().clear();
+        return cartRepo.save(cart);
+    }
+
+    @Transactional
+    public Cart replaceCart(Long userId, ReplaceCartRequest req) {
+        Cart cart = getOrCreate(userId);
+        cart.getItems().clear();
+
+        if (req.items != null) {
+            req.items.forEach(i -> addItem(userId, i));
+        }
+
+        return cartRepo.findByUserId(userId)
+        .orElseThrow(() -> new IllegalStateException("No se pudo encontrar el carrito para el usuario " + userId));
+
+    }
 }
